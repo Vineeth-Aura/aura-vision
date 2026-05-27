@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Aura Vision</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0a0a0f; color: white; font-family: system-ui; display: flex; flex-direction: column; height: 100vh; }
+video { width: 100%; flex: 1; object-fit: cover; }
+canvas { display: none; }
+.bottom { padding: 20px; text-align: center; }
+.talk-btn { width: 80px; height: 80px; border-radius: 50%; border: 3px solid #00d4ff; background: transparent; color: #00d4ff; font-size: 30px; cursor: pointer; }
+.talk-btn.active { background: #00d4ff; color: black; animation: pulse 1s infinite; }
+@keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.1); } }
+#status { color: #888; font-size: 13px; margin-top: 10px; }
+#response { color: #00d4ff; font-size: 14px; margin-top: 8px; max-height: 80px; overflow: hidden; }
+</style>
+</head>
+<body>
+<video id="video" autoplay playsinline></video>
+<canvas id="canvas"></canvas>
+<div class="bottom">
+<button class="talk-btn" id="talkBtn" onclick="toggleListen()">🎤</button>
+<p id="status">Tap to talk to Aura</p>
+<p id="response"></p>
+</div>
+<script>
+let API_KEY = localStorage.getItem('aura_key') || ''; if (!API_KEY) { API_KEY = prompt('Enter your Anthropic API key:'); if (API_KEY) localStorage.setItem('aura_key', API_KEY); }
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const status = document.getElementById('status');
+const response = document.getElementById('response');
+const talkBtn = document.getElementById('talkBtn');
+let listening = false;
+
+navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+  .then(stream => { video.srcObject = stream; });
+
+async function callAura(messages) {
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': API_KEY,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 150, messages })
+  });
+  const data = await resp.json();
+  return data.content?.[0]?.text || 'Sorry, I could not understand.';
+}
+
+function getImage() {
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+  return canvas.toDataURL('image/jpeg', 0.6).split(',')[1];
+}
+
+function speak(text) {
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'te-IN';
+  u.rate = 1.1;
+  speechSynthesis.speak(u);
+}
+
+function toggleListen() {
+  if (listening) return;
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { status.textContent = 'Speech not supported'; return; }
+
+  const rec = new SR();
+  rec.lang = 'te-IN';
+  rec.interimResults = false;
+  listening = true;
+  talkBtn.classList.add('active');
+  status.textContent = '🎤 Listening...';
+  speechSynthesis.cancel();
+  rec.start();
+
+  rec.onresult = async (e) => {
+    const transcript = e.results[0][0].transcript;
+    listening = false;
+    talkBtn.classList.remove('active');
+    status.textContent = '🧠 ' + transcript;
+    response.textContent = '';
+
+    const imageData = getImage();
+    try {
+      const text = await callAura([{ role: 'user', content: [
+        { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageData } },
+        { type: 'text', text: 'You are Aura, a helpful assistant for a blind person. Current time is: ' + new Date().toLocaleTimeString('te-IN') + '. They said: "' + transcript + '". Look at the camera image if relevant. Respond in Telugu (same language). Keep it 1-2 sentences max. Be natural and friendly like a companion.' }
+      ]}]);
+      response.textContent = text;
+      speak(text);
+      status.textContent = 'Tap to talk again';
+    } catch (e) {
+      status.textContent = '❌ Error';
+      listening = false;
+      talkBtn.classList.remove('active');
+    }
+  };
+
+  rec.onerror = () => {
+    listening = false;
+    talkBtn.classList.remove('active');
+    status.textContent = 'Tap to talk again';
+  };
+
+  rec.onend = () => {
+    if (listening) {
+      listening = false;
+      talkBtn.classList.remove('active');
+      status.textContent = 'Tap to talk again';
+    }
+  };
+}
+</script>
+</body>
+</html>
