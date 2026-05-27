@@ -62,8 +62,12 @@ function getImage() {
 function speak(text) {
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
-  u.lang = 'te-IN';
-  u.rate = 1.1;
+  const voices = speechSynthesis.getVoices();
+  const teVoice = voices.find(v => v.lang.includes('te')) || voices.find(v => v.lang.includes('hi')) || voices.find(v => v.name.includes('Google') && v.lang.includes('en'));
+  if (teVoice) u.voice = teVoice;
+  u.lang = teVoice ? teVoice.lang : 'te-IN';
+  u.rate = 0.95;
+  u.pitch = 1.05;
   speechSynthesis.speak(u);
 }
 
@@ -121,3 +125,4 @@ function toggleListen() {
 </script>
 </body>
 </html>
+
